@@ -1,0 +1,144 @@
+body {
+  width: 300px;
+  padding: 10px;
+  font-family: Arial, sans-serif;
+}
+
+h1 {
+  font-size: 18px;
+  color: #4285f4;
+}
+
+p {
+  font-size: 14px;
+  line-height: 1.4;
+}
+
+ul {
+  padding-left: 20px;
+}
+
+li {
+  margin-bottom: 5px;
+}
+
+.first-author-example {
+  background-color: #ffffd9;
+  border-left: 4px solid #ffd700;
+  padding: 2px 5px;
+}
+
+.last-author-example {
+  background-color: #e6f3ff;
+  border-right: 4px solid #4285f4;
+  padding: 2px 5px;
+}
+
+.both-author-example {
+  background: linear-gradient(to right, #ffffd9 50%, #e6f3ff 50%);
+  border-left: 4px solid #ffd700;
+  border-right: 4px solid #4285f4;
+  padding: 2px 5px;
+}
+
+.toggle-container {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+}
+
+.toggle-container label {
+  margin-right: 10px;
+}
+
+#visibility-toggle {
+  appearance: none;
+  width: 40px;
+  height: 20px;
+  background-color: #ccc;
+  border-radius: 20px;
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.3s;
+}
+
+#visibility-toggle:checked {
+  background-color: #4285f4;
+}
+
+#visibility-toggle::before {
+  content: '';
+  position: absolute;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  top: 1px;
+  left: 1px;
+  background-color: white;
+  transition: transform 0.3s;
+}
+
+#visibility-toggle:checked::before {
+  transform: translateX(20px);
+}
+
+.co-first-author-example {
+  background-color: #fff0e6;
+  border-left: 4px solid #ffa500;
+  padding: 2px 5px;
+}
+
+.co-first-last-author-example {
+  background: linear-gradient(to right, #fff0e6 50%, #e6f3ff 50%);
+  border-left: 4px solid #ffa500;
+  border-right: 4px solid #4285f4;
+  padding: 2px 5px;
+}
+
+.filter-container {
+  margin-top: 10px;
+}
+
+.filter-container label {
+  display: block;
+  margin-bottom: 5px;
+}
+
+.filter-container div {
+  margin-left: 10px;
+}
+
+.filter-container input[type="checkbox"] {
+  margin-right: 5px;
+}
+
+/* Share button styles */
+.share-container {
+  margin-top: 15px;
+  text-align: center;
+  border-top: 1px solid #e0e0e0;
+  padding-top: 10px;
+}
+
+.share-btn {
+  background-color: #f8f9fa;
+  border: 1px solid #dadce0;
+  border-radius: 6px;
+  color: #3c4043;
+  cursor: pointer;
+  font-family: Arial, sans-serif;
+  font-size: 14px;
+  padding: 8px 16px;
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+.share-btn:hover {
+  background-color: #e8f0fe;
+  border-color: #4285f4;
+  color: #1a73e8;
+}
+
+.share-btn:active {
+  background-color: #d2e3fc;
+}
