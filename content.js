@@ -10,6 +10,133 @@
   console.log('Current URL:', window.location.href);
   console.log('Page title:', document.title);
 
+  const REQUEST_SPACING_MS = 500;
+  const REQUEST_BATCH_LIMIT = 10;
+  const REQUEST_BATCH_COOLDOWN_MS = 3000;
+  const AUTHOR_CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutes
+  const AUTHOR_CACHE_PREFIX = 'authorHighlighterAuthors:';
+
+  const throttledFetchQueue = [];
+  let isProcessingThrottledQueue = false;
+  let requestsProcessedInBatch = 0;
+
+  function delay(ms) {
+    return new Promise(resolve => setTimeout(resolve, ms));
+  }
+
+  function scheduleThrottledFetch(taskFn) {
+    return new Promise((resolve, reject) => {
+      throttledFetchQueue.push({ taskFn, resolve, reject });
+      processThrottledFetchQueue();
+    });
+  }
+
+  async function processThrottledFetchQueue() {
+    if (isProcessingThrottledQueue) {
+      return;
+    }
+    isProcessingThrottledQueue = true;
+    while (throttledFetchQueue.length > 0) {
+      if (requestsProcessedInBatch >= REQUEST_BATCH_LIMIT) {
+        console.log(
+          `[AuthorHighlighter][throttle] Processed ${REQUEST_BATCH_LIMIT} requests. Pausing for ${REQUEST_BATCH_COOLDOWN_MS}ms before continuing.`
+        );
+        await delay(REQUEST_BATCH_COOLDOWN_MS);
+        requestsProcessedInBatch = 0;
+      }
+
+      const { taskFn, resolve, reject } = throttledFetchQueue.shift();
+      try {
+        const result = await taskFn();
+        requestsProcessedInBatch++;
+        resolve(result);
+      } catch (err) {
+        requestsProcessedInBatch++;
+        reject(err);
+      }
+
+      if (throttledFetchQueue.length > 0) {
+        console.log(`[AuthorHighlighter][throttle] Waiting ${REQUEST_SPACING_MS}ms before the next request.`);
+        await delay(REQUEST_SPACING_MS);
+      }
+    }
+    isProcessingThrottledQueue = false;
+  }
+
+  function getCacheKey(paperId) {
+    return `${AUTHOR_CACHE_PREFIX}${paperId}`;
+  }
+
+  function extractPaperIdFromHref(href) {
+    if (!href) {
+      return null;
+    }
+    try {
+      const parsed = new URL(href, window.location.origin);
+      return (
+        parsed.searchParams.get('citation_for_view') ||
+        parsed.searchParams.get('cites') ||
+        parsed.pathname + parsed.search
+      );
+    } catch (e) {
+      console.warn('[AuthorHighlighter] Failed to derive paper id from href:', href, e);
+      return href;
+    }
+  }
+
+  function getCachedAuthors(paperId) {
+    if (!paperId) {
+      return null;
+    }
+    try {
+      const storage = window.localStorage;
+      if (!storage) {
+        return null;
+      }
+      const raw = storage.getItem(getCacheKey(paperId));
+      if (!raw) {
+        return null;
+      }
+      const parsed = JSON.parse(raw);
+      if (!parsed.timestamp || typeof parsed.authorsText !== 'string') {
+        storage.removeItem(getCacheKey(paperId));
+        return null;
+      }
+      const age = Date.now() - parsed.timestamp;
+      if (age > AUTHOR_CACHE_DURATION_MS) {
+        storage.removeItem(getCacheKey(paperId));
+        console.log(`[AuthorHighlighter][cache-expired] Paper ${paperId} exceeded 30 minute cache window.`);
+        return null;
+      }
+      console.log(
+        `[AuthorHighlighter][cache-hit] Paper ${paperId} served from cache (${Math.round(age / 1000)}s old).`
+      );
+      return parsed.authorsText;
+    } catch (e) {
+      console.warn(`[AuthorHighlighter][cache-error] Failed reading cache for ${paperId}:`, e);
+      return null;
+    }
+  }
+
+  function setCachedAuthors(paperId, authorsText) {
+    if (!paperId || !authorsText) {
+      return;
+    }
+    try {
+      const storage = window.localStorage;
+      if (!storage) {
+        return;
+      }
+      storage.setItem(
+        getCacheKey(paperId),
+        JSON.stringify({ authorsText, timestamp: Date.now() })
+      );
+      console.log(`[AuthorHighlighter][cache-store] Paper ${paperId} cached for 30 minutes.`);
+    } catch (e) {
+      console.warn(`[AuthorHighlighter][cache-error] Failed writing cache for ${paperId}:`, e);
+    }
+  }
+
   function highlightAuthors() {
     const fullNameElement = document.querySelector('#gsc_prf_in');
     if (!fullNameElement) {
@@ -138,31 +265,49 @@
         const href = titleAnchor.getAttribute('href') || titleAnchor.getAttribute('data-href');
         if (!href) return null;
         const url = new URL(href, window.location.origin).toString();
-        const res = await fetch(url, { credentials: 'include' });
-        if (!res.ok) return null;
-        const html = await res.text();
-        const parser = new DOMParser();
-        const doc = parser.parseFromString(html, 'text/html');
-        let authorsText = null;
-        const sections = doc.querySelectorAll('.gs_scl');
-        sections.forEach(sec => {
-          const field = sec.querySelector('.gsc_oci_field');
-          const value = sec.querySelector('.gsc_oci_value');
-          if (field && value) {
-            const label = field.textContent ? field.textContent.trim().toLowerCase() : '';
-            if (/author|作者|autores|autor|auteurs|autori|autoren|автор|авторы|著者/.test(label)) {
-              authorsText = value.textContent ? value.textContent.trim() : '';
-            }
-          }
-        });
-        // Fallback: pick the first value that looks like a comma-separated author list
-        if (!authorsText) {
-          const guesses = Array.from(doc.querySelectorAll('.gsc_oci_value'))
-            .map(el => (el.textContent || '').trim())
-            .filter(t => t.split(',').length >= 2 && /[A-Za-z\u4e00-\u9fa5]/.test(t));
-          if (guesses.length > 0) authorsText = guesses[0];
+        const paperId = extractPaperIdFromHref(href);
+
+        const cachedAuthors = getCachedAuthors(paperId);
+        if (cachedAuthors) {
+          return cachedAuthors;
         }
-        return authorsText;
+
+        return await scheduleThrottledFetch(async () => {
+          console.log(`[AuthorHighlighter][network-request] Fetching full authors for ${paperId || url}`);
+          const res = await fetch(url, { credentials: 'include' });
+          if (!res.ok) {
+            console.warn(
+              `[AuthorHighlighter][network-request] Request failed for ${paperId || url} with status ${res.status}`
+            );
+            return null;
+          }
+          const html = await res.text();
+          const parser = new DOMParser();
+          const doc = parser.parseFromString(html, 'text/html');
+          let authorsText = null;
+          const sections = doc.querySelectorAll('.gs_scl');
+          sections.forEach(sec => {
+            const field = sec.querySelector('.gsc_oci_field');
+            const value = sec.querySelector('.gsc_oci_value');
+            if (field && value) {
+              const label = field.textContent ? field.textContent.trim().toLowerCase() : '';
+              if (/author|作者|autores|autor|auteurs|autori|autoren|автор|авторы|著者/.test(label)) {
+                authorsText = value.textContent ? value.textContent.trim() : '';
+              }
+            }
+          });
+          // Fallback: pick the first value that looks like a comma-separated author list
+          if (!authorsText) {
+            const guesses = Array.from(doc.querySelectorAll('.gsc_oci_value'))
+              .map(el => (el.textContent || '').trim())
+              .filter(t => t.split(',').length >= 2 && /[A-Za-z\u4e00-\u9fa5]/.test(t));
+            if (guesses.length > 0) authorsText = guesses[0];
+          }
+          if (authorsText) {
+            setCachedAuthors(paperId, authorsText);
+          }
+          return authorsText;
+        });
       } catch (e) {
         console.warn('Failed to fetch full authors from details:', e);
         return null;
