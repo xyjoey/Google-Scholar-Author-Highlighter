@@ -10,9 +10,9 @@
   console.log('Current URL:', window.location.href);
   console.log('Page title:', document.title);
 
-  const REQUEST_SPACING_MS = 500;
+  const REQUEST_SPACING_MS = 100;
   const REQUEST_BATCH_LIMIT = 10;
-  const REQUEST_BATCH_COOLDOWN_MS = 3000;
+  const REQUEST_BATCH_COOLDOWN_MS = 1000;
   const AUTHOR_CACHE_DURATION_MS = 30 * 60 * 1000; // 30 minutes
   const AUTHOR_CACHE_PREFIX = 'authorHighlighterAuthors:';
 
